@@ -175,9 +175,9 @@ def constLocalPatch_vector_csv(networkFile, patchArea, nReach, localPatchPath,
         - rewrite the ifelse statements with recursive functions.
           just for readability priority is low.
     """
-    f = h5py.File("%s.hdf5" % localPatchPath, "w")
+    f = h5py.File("%s" % localPatchPath, "w")
     dt = h5py.vlen_dtype(np.int32)
-    dset = f.create_dataset("network", (nReach), dtype=dt)
+    dset = f.create_dataset("network", (nReach,), dtype=dt)
     PATCHES = []
     if reach_start > 1:
         sys.stderr.write("RuntimeWarning: reach_start > 1 might cause " +
@@ -256,7 +256,7 @@ def constLocalPatch_vector_csv(networkFile, patchArea, nReach, localPatchPath,
 
 
 #@jit
-def concatup_csv(network, reach, area, patchArea, max_upReachNum=5):
+def concatup_csv(network, reach, area, patchArea, max_upReachNum=4):
     REACHES = []
     for upNum in range(0, max_upReachNum):
         columnName = "u%d" % upNum
@@ -272,7 +272,7 @@ def concatup_csv(network, reach, area, patchArea, max_upReachNum=5):
 
 
 #@jit
-def concatdown_csv(network, reach, area, patchArea, max_downReachNum=5):
+def concatdown_csv(network, reach, area, patchArea, max_downReachNum=4):
 
     REACHES = []
     for downNum in range(0, max_downReachNum):
