@@ -172,20 +172,24 @@ class LETKF_core(object):
         argsmap = self.__get_argsmap_letkf(ensembles[:, :, -1, :], observation,
                                            obserr, self.patches, obsvars,
                                            self.undef, nCPUs)
-        res = p.map(letkf.letkf, argsmap)
-        xa, Ws = self.__parse_mapped_res(res)
+        result = p.map(submit_letkf, argsmap)
+        p.close()
+        xa, Ws = self.__parse_mapped_res(result)
+        print(xa.shape)
+        print(outArray[:, :, -1, :].shape)
         #xa, Ws = letkf.letkf(ensembles[:, :, -1, :], observation, obserr,
-        #                     self.patches, obsvars, reaches, self.undef)
+        #                     self.patches, obsvars, np.arange(0, self.nReach, 1).tolist(), self.undef)
         outArray[:, :, -1, :] = xa
         # smoother
         if smoother:
             p = Pool(nCPUs)
             argsmap = self.__get_argsmap_ncs(ensembles[:, :, 0:-1, :],
                                              self.patches, Ws, nCPUs)
-            res = p.map(letkf.noCostSmoother, argsmap)
+            result = p.map(submit_ncs, argsmap)
+            p.close()
             #xa = letkf.noCostSmoother(ensembles[:, :, 0:-1, :],
             #                          self.patches, Ws, reaches)
-            xa = self.__parse_mapped_res(res, mode="ncs")
+            xa = self.__parse_mapped_res(result, mode="ncs")
             outArray[:, :, 0:-1, :] = xa
         return outArray, Ws
 
@@ -195,7 +199,7 @@ class LETKF_core(object):
         map args for letkf.letkf() along with nCPUs.
         for multiprocessing purpose.
         """
-        splitted_reaches = np.array_split(self.reaches, nCPUs).tolist()
+        splitted_reaches = np.array_split(self.reaches, nCPUs)
         splitted_reaches = [e.tolist() for e in splitted_reaches]
         return [[ensembles, observation, obserr, self.patches, obsvars,
                  reaches, self.undef] for reaches in splitted_reaches]
@@ -205,12 +209,12 @@ class LETKF_core(object):
         map args for letkf.noCostSmoother() along with nCPUs.
         for multiprocessing purpose.
         """
-        splitted_reaches = np.array_split(self.reaches, nCPUs).tolist()
+        splitted_reaches = np.array_split(self.reaches, nCPUs)
         splitted_reaches = [e.tolist() for e in splitted_reaches]
         return [[ensembles, self.patches, Ws, reaches]
                 for reaches in splitted_reaches]
 
-    def __parse_mapped_res(res, mode="letkf"):
+    def __parse_mapped_res(self, result, mode="letkf"):
         """
         parse results from mapped results in multiprocessing.
         multiprocessing.Pool.map() waits until all processes finish,
@@ -218,16 +222,19 @@ class LETKF_core(object):
         this method assuming that an argument is a result of map() (sorted),
         not map_unordered() which is non-blocking but unsorted.
         """
-        xa_t = np.zeros_like(res[0, 0])
+        xa = np.zeros_like(result[0][0])
         # zero-padded for out-of-range reaches, so just sum up.
-        xa = [xa_t+r[0] for r in res]
-        if mode == "letkf":
-            Ws_t = []
-            # resulted list is sorted, so just extend in a same order.
-            Ws = [Ws_t.extend(r[1]) for r in res]
-            return xa, Ws
-        else:
-            return xa
+        for r in result:
+            xa_i = r[0][0]
+            xa = xa + xa_i
+            print(xa.shape)
+            if mode == "letkf":
+                Ws_t = []
+                # resulted list is sorted, so just extend in a same order.
+                Ws = [Ws_t.extend(r[1]) for r in result]
+                return xa, Ws
+            else:
+                return xa
 
     def __checkInstanceVals(self, valList):
         keys = self.__dict__.keys()
@@ -269,6 +276,17 @@ class LETKF_core(object):
                                                         self.localPatchPath,
                                                         reach_start=self.reach_start)
         return PATCHES
+
+
+def submit_letkf(args):
+    result = letkf.letkf(args[0], args[1], args[2], args[3],
+                         args[4], args[5], args[6])
+    return result
+
+
+def submit_ncs(args):
+    result = letkf.noCostSmoother(args[0], args[1], args[2], args[3])
+    return result
 
 
 if __name__ == "__main__":
