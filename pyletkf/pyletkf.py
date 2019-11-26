@@ -146,9 +146,9 @@ class LETKF_core(object):
                     (last time step of the array) will happen.
                 If smoother == True, whole time series up to nT
                     will be smoothed by the smoother.
-            observation (np.ndarray): [nObs],
+            observation (np.ndarray): [nObs, nReach],
                                       undef-padded observation vector
-            obserr (np.ndarray): [nReach], observation error
+            obserr (np.ndarray): [nObs, nReach], undef-padded observation error
             obsvars (list): either 1 or 0 in shape of [nvar]
                           with same order as observation;
                             1: included in observation
