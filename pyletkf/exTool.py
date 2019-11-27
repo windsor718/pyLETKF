@@ -8,29 +8,6 @@ import h5py
 from numba import jit
 
 
-#@jit(nopython=False)
-def vectorize2d(map, nlon, nlat):
-    """
-    Vectorize 2d map into 1d vector array
-    Args:
-        nlon (int): number of longitudinal grid cells
-        nlat (int): number of latitudinal grid cells
-    Returns:
-        ndarray: vectorized map in C order
-        ndarray: 1d-2d mapper for longitude
-        ndarray: 1d-2d mapper for latitude
-    """
-    vecmap = map.flatten()
-    veclon = np.tile(np.arange(0, nlon), nlat)
-    veclat = np.repeat(np.arange(0, nlat), nlon)
-    return vecmap, veclon, veclat
-
-
-@jit(nopython=True)
-def getvecid(ilon, ilat, nlon):
-    return ilat*nlon + ilon
-
-
 def read_cache(cachepath):
     """
     read cached hdf5 file and returns list
@@ -46,8 +23,8 @@ def read_cache(cachepath):
 
 
 #@jit(nopython=False)
-def constLocalPatch_vector_nextxy(nextx, nexty, unitArea, patchArea,
-                                  name="network", undef=[-9, -10, -9999]):
+def constLocalPatch_vector_nextxy(nextx, nexty, unitArea, patchArea, map2vec,
+                                  nvec, name="network", undef=[-9, -10, -9999]):
     """
     Args:
         nextx (ndarray-like): nextx 2d array
@@ -63,11 +40,11 @@ def constLocalPatch_vector_nextxy(nextx, nexty, unitArea, patchArea,
         Optimize numba behavior
     """
     # create hdf5 dataset
-    f = h5py.File("test_%s.hdf5" % name, "w")
+    f = h5py.File("%s" % name, "w")
     dt = h5py.vlen_dtype(np.int32)
     nlon = nextx.shape[1]
     nlat = nextx.shape[0]
-    dset = f.create_dataset("vlen_int", (nlon*nlat,), dtype=dt)
+    dset = f.create_dataset("vlen_int", (nvec,), dtype=dt)
     patches = []
     for ilat in range(nexty.shape[0]):
         for ilon in range(nextx.shape[0]):
@@ -75,13 +52,18 @@ def constLocalPatch_vector_nextxy(nextx, nexty, unitArea, patchArea,
             if parea in undef:
                 # skip ocean
                 continue
+            if map2vec[ilat, ilon] < 0:
+                # out of vectorizing domain
+                continue
             lats = [ilat]
             lons = [ilon]
-            if ilat in undef or ilon in undef:
-                # skip river mouth/inland termination for further concatenation
+            if nextx[ilat, ilon] in undef or nexty[ilat, ilon] in undef:
+                # skip further concatenation for riv. mouth/inland termination.
                 # because -9 and -10 are global values for all basin.
-                # possible to implement with this algorithm, using basin.bin
-                # by getting basin ID at [clat, clon], mask nextxy.
+                # it is possible to implement with this algorithm,
+                # using basin.bin by getting basin ID
+                # at [clat, clon], mask nextxy.
+                dset[map2vec[ilat, ilon]] = [map2vec[ilat, ilon]]
                 continue
             clat = ilat  # current scope
             clon = ilon  # current scope
@@ -124,9 +106,9 @@ def constLocalPatch_vector_nextxy(nextx, nexty, unitArea, patchArea,
                         [lons.append(dg_next[1]) for dg_next in dw_next]
                         downgrids.extend(dw_next)
                     flag = "up"
-            vecids = [getvecid(plon, plat, nlon)
+            vecids = [map2vec[plat, plon]
                       for plon, plat in zip(lons, lats)]
-            dset[getvecid(ilon, ilat, nlon)] = vecids
+            dset[map2vec[ilat, ilon]] = vecids
             patches.append(vecids)
             print(vecids)
     f.close()
