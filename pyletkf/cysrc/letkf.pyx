@@ -173,7 +173,7 @@ def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observatio
                 No-assimilation. Return prior ensemble mean as a best guess.
             """
             xa = xf_me
-            W = 1 #np.identity?
+            W = np.identity(patch_nums) #np.identity?
             Ws.append(W)
         for i in range(nvars):
             dd = xa[i*len(patch):(i+1)*len(patch)]

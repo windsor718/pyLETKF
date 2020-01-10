@@ -21,7 +21,7 @@ class LETKF_core(object):
                                    'west', 'assimW', 'north', 'assimN',
                                    'ensMem', 'south', 'undef']
     required_instance_vals_vector = ['mode', 'ensMem', 'patchArea',
-                                     'networkFile', 'nReach', 'undef']
+                                     'networkPath', 'nReach', 'undef']
 
     def __init__(self, configPath=None, mode="vector", use_cache=False):
         """
@@ -38,7 +38,6 @@ class LETKF_core(object):
         """
 
         self.mode = mode
-        self.reach_start = 1
         self.use_cache = use_cache
         self.localPatchPath = "./localPatch.obj"
 
@@ -67,13 +66,20 @@ class LETKF_core(object):
             elif mode == "vector":
                 self.ensMem = int(config.get("assimilation", "ensMem"))
                 self.patchArea = float(config.get("assimilation", "patchArea"))
-                self.networkFile = str(config.get("model", "networkFile"))
+                self.networkPath = str(config.get("model", "networkPath"))
                 self.nReach = int(config.get("model", "nReach"))
                 self.localPatchPath = str(config.get("assimilation",
                                                      "localPatchPath"))
                 self.networktype = str(config.get("model", "networktype"))
                 self.undef = float(config.get("observation", "undef"))
                 self.reaches = np.arange(0, self.nReach, 1)
+                if self.networktype == "nextxy":
+                    self.nLon = int(config.get("model", "nLon"))
+                    self.nLat = int(config.get("model", "nLat"))
+                    self.vectorinfoPath = str(config.get("model", "vectorinfopath"))
+                    self.catareaPath = str(config.get("model", "catareaPath"))
+                elif self.networktype == "csv":
+                    self.reach_start = 1
 
             else:
                 raise IOError("mode %s is not supprted." % mode)
@@ -81,6 +87,11 @@ class LETKF_core(object):
             print("############Check instance variables############")
             self.__showProperties()
             print("##############")
+
+        elif not os.path.exists(configPath):
+            raise IOError("{0} does not exist.".format(configPath))
+        else:
+            print("configuration has not been made. Please set-up by yourself")
 
     def initialize(self):
 
@@ -164,9 +175,8 @@ class LETKF_core(object):
         outArray = ensembles.copy()
         # check shapes are correspond with instance correctly
         eNum = ensembles.shape[1]
-        assert eNum == self.ensMem, "Specified emsemble member %d is not" + \
-                                    "match with the passed array shape %d." \
-                                    % (self.ensMem, eNum)
+        assert eNum == self.ensMem, "Specified emsemble member is not" + \
+                                    "match with the passed array shape." \
         # main letkf
         p = Pool(nCPUs)
         argsmap = self.__get_argsmap_letkf(ensembles[:, :, -1, :], observation,
@@ -175,8 +185,6 @@ class LETKF_core(object):
         result = p.map(submit_letkf, argsmap)
         p.close()
         xa, Ws = self.__parse_mapped_res(result)
-        print(xa.shape)
-        print(outArray[:, :, -1, :].shape)
         #xa, Ws = letkf.letkf(ensembles[:, :, -1, :], observation, obserr,
         #                     self.patches, obsvars, np.arange(0, self.nReach, 1).tolist(), self.undef)
         outArray[:, :, -1, :] = xa
@@ -214,7 +222,7 @@ class LETKF_core(object):
         return [[ensembles, self.patches, Ws, reaches]
                 for reaches in splitted_reaches]
 
-    def __parse_mapped_res(self, result, mode="letkf"):
+    def __parse_mapped_res(self, result, mode="ncs"):
         """
         parse results from mapped results in multiprocessing.
         multiprocessing.Pool.map() waits until all processes finish,
@@ -225,16 +233,16 @@ class LETKF_core(object):
         xa = np.zeros_like(result[0][0])
         # zero-padded for out-of-range reaches, so just sum up.
         for r in result:
-            xa_i = r[0][0]
+            xa_i = r[0]
             xa = xa + xa_i
-            print(xa.shape)
-            if mode == "letkf":
-                Ws_t = []
-                # resulted list is sorted, so just extend in a same order.
-                Ws = [Ws_t.extend(r[1]) for r in result]
-                return xa, Ws
-            else:
-                return xa
+
+            Ws_t = []
+            # resulted list is sorted, so just extend in a same order.
+            Ws = [Ws_t.extend(r[1]) for r in result]
+        if mode == "ncs":
+            return xa, Ws
+        else:
+            return xa
 
     def __checkInstanceVals(self, valList):
         keys = self.__dict__.keys()
@@ -266,11 +274,23 @@ class LETKF_core(object):
     def __constLocalPatch_vector(self):
         if self.networktype == "nextxy":
             # 2d inputs; use nextxy format river network; binary formats
-            PATCHES = exTool.constLocalPatch_vector_nextxy(self.networkfile,
-                                                           self.patchArea)
+            with h5py.File(self.vectorinfoPath, "r") as f:
+                map2vec = f["map2vec"][:]
+                nvec = len(f["vec2lat"][:])
+            nextx = np.memmap(self.networkPath, dtype=np.int32, mode="r",
+                              shape=(2, self.nLat, self.nLon))[0, :, :]
+            nexty = np.memmap(self.networkPath, dtype=np.int32, mode="r",
+                              shape=(2, self.nLat, self.nLon))[1, :, :]
+            ctmare = np.memmap(self.catareaPath, dtype=np.float32, mode="r",
+                              shape=(self.nLat, self.nLon))
+            PATCHES = exTool.constLocalPatch_vector_nextxy(nextx, nexty,
+                                                           ctmare,
+                                                           self.patchArea,
+                                                           map2vec, nvec,
+                                                           name=self.localPatchPath)
         else:
             # already vectorized data; csv formats
-            PATCHES = exTool.constLocalPatch_vector_csv(self.networkFile,
+            PATCHES = exTool.constLocalPatch_vector_csv(self.networkPath,
                                                         self.patchArea,
                                                         self.nReach,
                                                         self.localPatchPath,

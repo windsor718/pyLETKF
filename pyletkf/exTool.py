@@ -22,9 +22,10 @@ def read_cache(cachepath):
     return patches
 
 
-#@jit(nopython=False)
+@jit
 def constLocalPatch_vector_nextxy(nextx, nexty, unitArea, patchArea, map2vec,
-                                  nvec, name="network", undef=[-9, -10, -9999]):
+                                  nvec, name="network.hdf5",
+                                  undef=[-9, -10, -9999]):
     """
     Args:
         nextx (ndarray-like): nextx 2d array
@@ -46,8 +47,8 @@ def constLocalPatch_vector_nextxy(nextx, nexty, unitArea, patchArea, map2vec,
     nlat = nextx.shape[0]
     dset = f.create_dataset("vlen_int", (nvec,), dtype=dt)
     patches = []
-    for ilat in range(nexty.shape[0]):
-        for ilon in range(nextx.shape[0]):
+    for ilat in range(nlat):
+        for ilon in range(nlon):
             parea = unitArea[ilat, ilon]
             if parea in undef:
                 # skip ocean
@@ -64,6 +65,12 @@ def constLocalPatch_vector_nextxy(nextx, nexty, unitArea, patchArea, map2vec,
                 # using basin.bin by getting basin ID
                 # at [clat, clon], mask nextxy.
                 dset[map2vec[ilat, ilon]] = [map2vec[ilat, ilon]]
+                patches.append([map2vec[ilat, ilon]])
+                continue
+            if parea >= patchArea:
+                # parea already exceeds patchArea
+                dset[map2vec[ilat, ilon]] = [map2vec[ilat, ilon]]
+                patches.append([map2vec[ilat, ilon]])
                 continue
             clat = ilat  # current scope
             clon = ilon  # current scope
@@ -91,8 +98,13 @@ def constLocalPatch_vector_nextxy(nextx, nexty, unitArea, patchArea, map2vec,
                 elif flag == "down":
                     for downgrid in downgrids:
                         # Fotran > C
-                        dw_next = [nexty[downgrid[0], downgrid[1]]-1,
-                                   nextx[downgrid[0], downgrid[1]]-1]
+                        print(downgrid)
+                        if downgrid[0]+1 in undef or downgrid[1]+1 in undef:
+                            flag = "up"
+                            continue
+                        else:
+                            dw_next = [nexty[downgrid[0], downgrid[1]]-1,
+                                       nextx[downgrid[0], downgrid[1]]-1]
                     parea_down = unitArea[dw_next[0], dw_next[1]]
                     if parea_down in undef:
                         continue
@@ -115,7 +127,7 @@ def constLocalPatch_vector_nextxy(nextx, nexty, unitArea, patchArea, map2vec,
     return patches
 
 
-#@jit(nopython=False)
+@jit()
 def concatup_nextxy(clon, clat, nextx, nexty, unitArea, undef):
     upgrids = []
     parea = 0
