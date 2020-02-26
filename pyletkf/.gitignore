@@ -1,0 +1,4 @@
+*.so
+build/
+__pycache__/
+cysrc/*.c
