@@ -6,8 +6,8 @@ from multiprocessing import Pool
 import h5py
 import numpy as np
 import sys
-from . import exTool
-from . import letkf
+import pyletkf.pyletkf.exTool as exTool
+import pyletkf.pyletkf.letkf as letkf
 
 
 class LETKF_core(object):
@@ -47,22 +47,11 @@ class LETKF_core(object):
             config = configparser.ConfigParser()
             config.read(configPath)
 
-            if mode == "grid":
-                self.assimN = float(config.get("assimilation", "assimN"))
-                self.assimS = float(config.get("assimilation", "assimS"))
-                self.assimE = float(config.get("assimilation", "assimE"))
-                self.assimW = float(config.get("assimilation", "assimW"))
-                self.patch = int(config.get("assimilation", "patch"))
-                self.ensMem = int(config.get("assimilation", "ensMem"))
-                self.nLon = int(config.get("model", "nLon"))
-                self.nLat = int(config.get("model", "nLat"))
-                self.res = float(config.get("model", "res"))
-                self.north = float(config.get("model", "north"))
-                self.south = float(config.get("model", "south"))
-                self.east = float(config.get("model", "east"))
-                self.west = float(config.get("model", "west"))
-                self.undef = float(config.get("observation", "undef"))
-
+            if self.mode == "grid":
+                raise NotImplementedError("mode=grid is not supported anymore. " +
+                                            "Please make your data vectorized. " +
+                                            "In general vectorization leads an efficiency and " +
+                                            "readability of the code.")
             elif mode == "vector":
                 self.ensMem = int(config.get("assimilation", "ensMem"))
                 self.patchArea = float(config.get("assimilation", "patchArea"))
@@ -93,23 +82,27 @@ class LETKF_core(object):
         else:
             print("configuration has not been made. Please set-up by yourself")
 
-    def initialize(self):
+    def initialize(self, backend="h5py"):
 
         if self.mode == "grid":
             # check all instance variables are set.
-            self.__checkInstanceVals(self.required_instance_vals_grid)
-            # implementaion needed
-            # generate local patch
-            # self.patches = self.__constLocalPatch_grid()  #  not supported
-
+            raise NotImplementedError("mode=grid is not supported anymore. " +
+                                      "Please make your data vectorized. " +
+                                      "In general vectorization leads an efficiency and " +
+                                      "readability of the code.")
         elif self.mode == "vector":
             # check all instance variables are set.
             self.__checkInstanceVals(self.required_instance_vals_vector)
             if self.use_cache:
-                with h5py.File(self.localPatchPath, mode="r") as f:
-                    key = list(f.keys())[0]
-                    self.patches = f[key][:].tolist()
-                    self.patches = [patch.tolist() for patch in self.patches]
+                if backend == "pickle":
+                    with open(self.localPatchPath, mode="rb") as f:
+                        import pickle
+                        self.patches = pickle.load(f)
+                else:
+                    with h5py.File(self.localPatchPath, mode="r") as f:
+                        key = list(f.keys())[0]
+                        patches = f[key][:].tolist()
+                        self.patches = [patch.tolist() for patch in patches]
             else:
                 # generate local patch
                 self.patches = \
@@ -117,38 +110,8 @@ class LETKF_core(object):
         else:
             raise IOError("mode %s is not supoorted." % self.mode)
 
-    def letkf_grid(self, ensembles, observation, obserr, ocean, excGrids):
-        """
-        Data Assimilation with Local Ensemble Transformed Kalman Filter
-        Args:
-            ensembles (numpy.ndarray): [nLat,nLon,eNum], ensemble simulation
-            observation (numpy.ndarray): [nLat,nLon], gridded observation
-                                         with observed or undef values
-            ocean (numpy.ndarray): [nLat,nLon], gridded ocean mask
-            excGrids (numpy.ndarray): [nLat,nLon], grids to exclude
-        Notes:
-            Deprecated.
-        """
-        sys.stderr.write("Deprecation Warning: mode=grid will be deprecated " +
-                         "in future release. Vectorize your 2d data and use " +
-                         "mode=vector is highly efficient and recommended.")
-        # check shapes are correspond with instance correctly
-        eNum = ensembles.shape[0]
-        if eNum != self.ensMem:
-            raise IOError("Specified emsemble member %d is not match" +
-                          "with the passed array shape %d."
-                          % (self.ensMem, eNum))
-        for data in [ensembles, observation, ocean, excGrids]:
-            self.__checkLatLonShapes(data)
-        # main letkf
-        xa = letkf.letkf(ensembles, observation, obserr, ocean, excGrids,
-                         self.patch, self.ensMem, self.assimE, self.assimW,
-                         self.assimN, self.assimS, self.east, self.west,
-                         self.north, self.south, self.res, self.undef)
-        return xa
-
     def letkf_vector(self, ensembles, observation, obserr, obsvars,
-                     nCPUs=1, smoother=False):
+                     guess="mean", nCPUs=1, smoother=False):
         """
         Data Assimilation with Local Ensemble Transformed Kalman Filter
         Args:
@@ -164,6 +127,10 @@ class LETKF_core(object):
                           with same order as observation;
                             1: included in observation
                             0: not included in observation
+            guess (str): if "mean", where observation is not available replace all values
+                         with ensemble mean as a single posteroir. 
+                         if "prior", just use prior ensembles 
+                         for posterior (no update at all).
             nCPUs (int): number of cpus used for parallelization
             smoother (bool): true to activate no cost LETKF smooter
         Returns:
@@ -181,7 +148,7 @@ class LETKF_core(object):
         p = Pool(nCPUs)
         argsmap = self.__get_argsmap_letkf(ensembles[:, :, -1, :], observation,
                                            obserr, self.patches, obsvars,
-                                           self.undef, nCPUs)
+                                           guess, self.undef, nCPUs)
         result = p.map(submit_letkf, argsmap)
         p.close()
         xa, Ws = self.__parse_mapped_res(result)
@@ -202,7 +169,7 @@ class LETKF_core(object):
         return outArray, Ws
 
     def __get_argsmap_letkf(self, ensembles, observation, obserr, patches,
-                            obsvars, undef, nCPUs):
+                            obsvars, guess, undef, nCPUs):
         """
         map args for letkf.letkf() along with nCPUs.
         for multiprocessing purpose.
@@ -210,7 +177,7 @@ class LETKF_core(object):
         splitted_reaches = np.array_split(self.reaches, nCPUs)
         splitted_reaches = [e.tolist() for e in splitted_reaches]
         return [[ensembles, observation, obserr, self.patches, obsvars,
-                 reaches, self.undef] for reaches in splitted_reaches]
+                 reaches, self.undef, guess] for reaches in splitted_reaches]
 
     def __get_argsmap_ncs(self, ensembles, patches, Ws, nCPUs):
         """
@@ -258,18 +225,16 @@ class LETKF_core(object):
         elif len(array.shape) == 3:
             lat_shape = array.shape[1]
             lon_shape = array.shape[2]
-        assert lat_shape == self.nLat, "Specified latitude number %d" +\
+        assert lat_shape == self.nLat, "Specified latitude number {0}".format(self.nLat) +\
                                        "is not match with the passed" +\
-                                       "array shape %d." \
-                                       % (self.nLat, lat_shape)
-        assert lon_shape == self.nLon, "Specified longitude number %d" +\
+                                       "array shape {0}.".format(lat_shape)
+        assert lon_shape == self.nLon, "Specified longitude number {0}".format(self.nLon) +\
                                        "is not match with the passed" +\
-                                       "array shape %d." \
-                                       % (self.nLon, lon_shape)
+                                       "array shape {0}.".format(lon_shape)
 
     def __showProperties(self):
         for key in self.__dict__.keys():
-            print("%s:%s" % (key, self.__dict__[key]))
+            print("{0}:{1}".format(key, self.__dict__[key]))
 
     def __constLocalPatch_vector(self):
         if self.networktype == "nextxy":
@@ -300,7 +265,7 @@ class LETKF_core(object):
 
 def submit_letkf(args):
     result = letkf.letkf(args[0], args[1], args[2], args[3],
-                         args[4], args[5], args[6])
+                         args[4], args[5], args[6], args[7])
     return result
 
 

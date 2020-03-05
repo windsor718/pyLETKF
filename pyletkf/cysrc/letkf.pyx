@@ -14,7 +14,7 @@ ctypedef np.complex64_t DTYPE_t_c
 #@cython.nonecheck(False)
 def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observation,
           np.ndarray[DTYPE_t,ndim=2] obserr, list patches, list obsvars,
-          list assimReaches, float undef):
+          list assimReaches, float undef, str guess):
     
     """
     Data Assimilation with Local Ensemble Transformed Kalman Filter
@@ -30,7 +30,10 @@ def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observatio
         assimReaches (list): ids where to be assimilated;
                            for partial assimilation or parallellization.
         undef (float): undef value for the observation
-    Notes:
+        guess (str): if "mean", where observation is not available replace all values
+                     with ensemble mean as a single posteroir. if "prior", just use prior ensembles 
+                     for posterior (no update at all).
+    Notes:                   
         
         nvars: number of model variables assimilated (state vector)
         nobsvar: number of variables observation is available, usually less than nvars.
@@ -86,7 +89,6 @@ def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observatio
     # type declaration ends
 
     # main loop
-    print(len(assimReaches))
     for reach in assimReaches:
         # local patch
         patch = patches[reach]
@@ -162,7 +164,15 @@ def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observatio
             for i in range(0,eNum):
                 Warr[:,i] = Wvec.reshape(eNum)
             W = Pa_sqr + Warr
+            # W = Pa_sqr/np.sqrt(eNum-1.0) + Warr
             Ea = np.dot(Ef,W)
+            # if reach  == 23916:
+            #     print("Ef", Ef)
+            #     print("Pa_sqr", Pa_sqr)
+            #     print("Wvec", Wvec)
+            #     print("Warr", Warr)
+            #     print("W", W)
+            #     print("Ea", Ea)
 
             xa = xf_me + Ea
             Ws.append(W)
@@ -170,9 +180,14 @@ def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observatio
         else:
             """
                 No observation is available in a local patch.
-                No-assimilation. Return prior ensemble mean as a best guess.
+                No-assimilation. Return a best guess.
             """
-            xa = xf_me
+            if guess == "mean":
+                xa = xf_me
+            elif guess == "prior":
+                xa = xf
+            else:
+                raise NotImplementedError(guess)
             W = np.identity(patch_nums) #np.identity?
             Ws.append(W)
         for i in range(nvars):

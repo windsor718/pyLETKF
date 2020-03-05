@@ -152,6 +152,7 @@ def concatup_nextxy(clon, clat, nextx, nexty, unitArea, undef):
 
 
 #@jit(nopython=False)
+# @jit
 def constLocalPatch_vector_csv(networkFile, patchArea, nReach, localPatchPath,
                                reach_start=1):
     """
@@ -174,9 +175,9 @@ def constLocalPatch_vector_csv(networkFile, patchArea, nReach, localPatchPath,
     dset = f.create_dataset("network", (nReach,), dtype=dt)
     PATCHES = []
     if reach_start > 1:
-        sys.stderr.write("RuntimeWarning: reach_start > 1 might cause " +
-                         "serious error. It should be set to 0 (C-style) " +
-                         "or 1 (Fortran-style).")
+        raise RuntimeWarning("RuntimeWarning: reach_start > 1 might cause " +
+                             "serious error. It should be set to 0 (C-style) " +
+                             "or 1 (Fortran-style).")
     print("reading river network csv...")
     assert networkFile.split("/")[-1].split(".")[-1] == "csv", "only csv" +\
                                                         "format is supported"
@@ -186,13 +187,15 @@ def constLocalPatch_vector_csv(networkFile, patchArea, nReach, localPatchPath,
     for reach in range(reach_start, nReach+reach_start):
         PATCH = [reach]
         area = 0  # initialize
-        uArea = network.loc[network.reach == reach]["upArea"].values[0]
-        area = uArea
+        # uArea = network.loc[network.reach == reach]["upArea"].values[0]
+        cArea = network.loc[network.reach == reach]["area"].values[0]
+        # area = uArea
+        area = cArea
         flag = "up"
         upperBoundary = False
         bottomBoundary = False
         # while area < patchArea:
-        for i in range(0, 100):
+        while area < patchArea:
             if upperBoundary and bottomBoundary:
                 # no up/downstream catchments. To avoid infinite loop.
                 break
@@ -229,7 +232,7 @@ def constLocalPatch_vector_csv(networkFile, patchArea, nReach, localPatchPath,
                     downReaches_each, area = concatdown_csv(network, downReach,
                                                             area, patchArea)
                     for r in downReaches_each:
-                        PATCH.append(r)
+                        DOWN.append(r)
                     if area > patchArea:
                         break
                 downReaches = DOWN
@@ -243,13 +246,17 @@ def constLocalPatch_vector_csv(networkFile, patchArea, nReach, localPatchPath,
                 raise IOError("iteration goes wrong conditional branch." +
                               "Fatal Error, Abort.")
         PATCH = (np.array(PATCH) - reach_start).tolist()  # pythonize
+        print("patch length/area at reach {0}".format(reach),
+              len(PATCH),
+              area)
         dset[reach - reach_start] = PATCH
+        print(dset[reach - reach_start])
         PATCHES.append(PATCH)
     f.close()
     return PATCHES
 
 
-#@jit
+# @jit
 def concatup_csv(network, reach, area, patchArea, max_upReachNum=4):
     REACHES = []
     for upNum in range(0, max_upReachNum):
@@ -257,15 +264,19 @@ def concatup_csv(network, reach, area, patchArea, max_upReachNum=4):
         upReach = int(network.loc[network.reach == reach][columnName])
         if upReach == -1:
             continue
-        uArea = network.loc[network.reach == upReach]["upArea"].values[0]
-        area = area + uArea
+        # uArea = network.loc[network.reach == upReach]["upArea"].values[0]
+        cArea = network.loc[network.reach == upReach]["area"].values[0]
+        # area = area + uArea
+        area = area + cArea
+        # if area > patchArea:
+        #     break
+        REACHES.append(upReach)
         if area > patchArea:
             break
-        REACHES.append(upReach)
     return REACHES, area
 
 
-#@jit
+@jit
 def concatdown_csv(network, reach, area, patchArea, max_downReachNum=4):
 
     REACHES = []
@@ -274,9 +285,13 @@ def concatdown_csv(network, reach, area, patchArea, max_downReachNum=4):
         downReach = int(network.loc[network.reach == reach][columnName])
         if downReach == -1:
             continue
-        uArea = network.loc[network.reach == downReach]["upArea"].values[0]
-        area = area + uArea
+        # uArea = network.loc[network.reach == downReach]["upArea"].values[0]
+        cArea = network.loc[network.reach == downReach]["area"].values[0]
+        # area = area + uArea
+        area = area + cArea
+        # if area > patchArea:
+        #     break
+        REACHES.append(downReach)
         if area > patchArea:
             break
-        REACHES.append(downReach)
     return REACHES, area
