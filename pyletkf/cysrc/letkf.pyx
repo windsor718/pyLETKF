@@ -66,6 +66,7 @@ def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observatio
     cdef int i
     cdef int idx
     cdef int reach
+    cdef float ro = 1.0  # covariance inflation factor
 
     cdef np.ndarray[DTYPE_t,ndim=2] H
     cdef np.ndarray[DTYPE_t,ndim=2] I = np.identity(eNum,dtype=DTYPE)
@@ -149,7 +150,8 @@ def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observatio
             HEf = np.dot(H,Ef) # patch_nums x eNum
             HEftRinvHEf = np.dot(np.dot(HEft,Rinv),HEf) # (eNum x patch_nums) * (patch_nums x patch_nums) *(patch_nums x eNum) = (eNum x eNum)
 
-            VDVt = I + HEftRinvHEf
+            # VDVt = I + HEftRinvHEf
+            VDVt = (eNum-1)*I/ro + HEftRinvHEf
             w,v = np.linalg.eigh(VDVt,UPLO="U")
             
             Dinv = np.diag((w+1e-20)**(-1))
@@ -173,6 +175,16 @@ def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observatio
             #     print("Warr", Warr)
             #     print("W", W)
             #     print("Ea", Ea)
+            # print(Ws)
+
+            # f = open("Ws_max.txt", "a")
+            # f.write(str(max(map(max, Ws))))
+            # f.write('\n')
+            # f.close()
+            # f = open("Ws.txt", "a")
+            # f.write(str(Ws))
+            # f.write('\n')
+            # f.close()
 
             xa = xf_me + Ea
             Ws.append(W)

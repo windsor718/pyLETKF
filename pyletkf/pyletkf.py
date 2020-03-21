@@ -164,7 +164,7 @@ class LETKF_core(object):
             p.close()
             #xa = letkf.noCostSmoother(ensembles[:, :, 0:-1, :],
             #                          self.patches, Ws, reaches)
-            xa = self.__parse_mapped_res(result, mode="ncs")
+            xa = self.__parse_mapped_res(result)
             outArray[:, :, 0:-1, :] = xa
         return outArray, Ws
 
@@ -189,7 +189,7 @@ class LETKF_core(object):
         return [[ensembles, self.patches, Ws, reaches]
                 for reaches in splitted_reaches]
 
-    def __parse_mapped_res(self, result, mode="ncs"):
+    def __parse_mapped_res(self, result):
         """
         parse results from mapped results in multiprocessing.
         multiprocessing.Pool.map() waits until all processes finish,
@@ -199,17 +199,16 @@ class LETKF_core(object):
         """
         xa = np.zeros_like(result[0][0])
         # zero-padded for out-of-range reaches, so just sum up.
-        for r in result:
+        for idx, r in enumerate(result):
             xa_i = r[0]
             xa = xa + xa_i
 
-            Ws_t = []
             # resulted list is sorted, so just extend in a same order.
-            Ws = [Ws_t.extend(r[1]) for r in result]
-        if mode == "ncs":
-            return xa, Ws
-        else:
-            return xa
+            if idx == 0:
+                Ws = r[1]
+            else:
+                Ws.extend(r[1])
+        return xa, Ws
 
     def __checkInstanceVals(self, valList):
         keys = self.__dict__.keys()
