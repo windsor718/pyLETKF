@@ -165,8 +165,8 @@ def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observatio
 
             for i in range(0,eNum):
                 Warr[:,i] = Wvec.reshape(eNum)
-            W = Pa_sqr + Warr
-            # W = Pa_sqr/np.sqrt(eNum-1.0) + Warr
+            # W = Pa_sqr + Warr
+            W = Pa_sqr*np.sqrt(eNum-1.0) + Warr
             Ea = np.dot(Ef,W)
             # if reach  == 23916:
             #     print("Ef", Ef)
@@ -176,15 +176,6 @@ def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observatio
             #     print("W", W)
             #     print("Ea", Ea)
             # print(Ws)
-
-            # f = open("Ws_max.txt", "a")
-            # f.write(str(max(map(max, Ws))))
-            # f.write('\n')
-            # f.close()
-            # f = open("Ws.txt", "a")
-            # f.write(str(Ws))
-            # f.write('\n')
-            # f.close()
 
             xa = xf_me + Ea
             Ws.append(W)
