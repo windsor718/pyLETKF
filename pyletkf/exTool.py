@@ -22,7 +22,7 @@ def read_cache(cachepath):
     return patches
 
 
-@jit
+# @jit
 def constLocalPatch_vector_nextxy(nextx, nexty, unitArea, patchArea, map2vec,
                                   nvec, name="network.hdf5",
                                   undef=[-9, -10, -9999]):
@@ -127,7 +127,7 @@ def constLocalPatch_vector_nextxy(nextx, nexty, unitArea, patchArea, map2vec,
     return patches
 
 
-@jit()
+# @jit()
 def concatup_nextxy(clon, clat, nextx, nexty, unitArea, undef):
     upgrids = []
     parea = 0
@@ -194,54 +194,44 @@ def constLocalPatch_vector_csv(networkFile, patchArea, nReach, localPatchPath,
         flag = "up"
         upperBoundary = False
         bottomBoundary = False
-        # while area < patchArea:
+        currentReaches_up = [reach]
+        currentReaches_down = [reach]
         while area < patchArea:
             if upperBoundary and bottomBoundary:
                 # no up/downstream catchments. To avoid infinite loop.
                 break
             elif flag == "up":
-                upReaches, area = concatup_csv(network, reach, area, patchArea)
+                currentReaches_up_new = []
+                for ireach in currentReaches_up:
+                    upReaches, area = concatup_csv(network,
+                                                   ireach,
+                                                   area,
+                                                   patchArea)
+                    PATCH.extend(upReaches)
+                    currentReaches_up_new.extend(upReaches)
+                    if area > patchArea:
+                        break
+                    if len(upReaches) == 0:
+                        # no upstream catchments.
+                        upperBoundary = True
                 flag = "down"
-                for r in upReaches:
-                    PATCH.append(r)
+                currentReaches_up = currentReaches_up_new
             elif flag == "down":
-                downReaches, area = concatdown_csv(network, reach,
-                                                   area, patchArea)
-                flag = "up_iter"
-                for r in downReaches:
-                    PATCH.append(r)
-            elif flag == "up_iter":
-                UP = []
-                for upReach in upReaches:
-                    upReaches_each, area = concatup_csv(network, upReach,
-                                                        area, patchArea)
-                    for r in upReaches_each:
-                        UP.append(r)
+                currentReaches_down_new = []
+                for ireach in currentReaches_down:
+                    downReaches, area = concatdown_csv(network,
+                                                       ireach,
+                                                       area,
+                                                       patchArea)
+                    PATCH.extend(downReaches)
+                    currentReaches_down_new.extend(downReaches)
                     if area > patchArea:
                         break
-                upReaches = UP
-                for r in upReaches:
-                    PATCH.append(r)
-                flag = "down_iter"
-                if len(upReaches) == 0:
-                    # no upstream catchments.
-                    upperBoundary = True
-            elif flag == "down_iter":
-                DOWN = []
-                for downReach in downReaches:
-                    downReaches_each, area = concatdown_csv(network, downReach,
-                                                            area, patchArea)
-                    for r in downReaches_each:
-                        DOWN.append(r)
-                    if area > patchArea:
-                        break
-                downReaches = DOWN
-                for r in downReaches:
-                    PATCH.append(r)
-                flag = "up_iter"
-                if len(downReaches) == 0:
-                    # no downstream catchments.
-                    bottomBoundary = True
+                    if len(downReaches) == 0:
+                        # no downstream catchments.
+                        bottomBoundary = True
+                flag = "up"
+                currentReaches_down = currentReaches_down_new
             else:
                 raise IOError("iteration goes wrong conditional branch." +
                               "Fatal Error, Abort.")
@@ -264,19 +254,15 @@ def concatup_csv(network, reach, area, patchArea, max_upReachNum=4):
         upReach = int(network.loc[network.reach == reach][columnName])
         if upReach == -1:
             continue
-        # uArea = network.loc[network.reach == upReach]["upArea"].values[0]
         cArea = network.loc[network.reach == upReach]["area"].values[0]
-        # area = area + uArea
         area = area + cArea
-        # if area > patchArea:
-        #     break
         REACHES.append(upReach)
         if area > patchArea:
             break
     return REACHES, area
 
 
-@jit
+# @jit
 def concatdown_csv(network, reach, area, patchArea, max_downReachNum=4):
 
     REACHES = []
@@ -285,12 +271,8 @@ def concatdown_csv(network, reach, area, patchArea, max_downReachNum=4):
         downReach = int(network.loc[network.reach == reach][columnName])
         if downReach == -1:
             continue
-        # uArea = network.loc[network.reach == downReach]["upArea"].values[0]
         cArea = network.loc[network.reach == downReach]["area"].values[0]
-        # area = area + uArea
         area = area + cArea
-        # if area > patchArea:
-        #     break
         REACHES.append(downReach)
         if area > patchArea:
             break

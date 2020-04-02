@@ -67,7 +67,7 @@ class LETKF_core(object):
                     self.nLat = int(config.get("model", "nLat"))
                     self.vectorinfoPath = str(config.get("model", "vectorinfopath"))
                     self.catareaPath = str(config.get("model", "catareaPath"))
-                elif self.networktype == "csv":
+                elif self.networktype == "csv" or self.networktype == "\"csv\"":
                     self.reach_start = 1
 
             else:
